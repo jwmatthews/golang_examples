@@ -1,0 +1,17 @@
+sudo -u postgres psql
+
+#to list database
+\l
+
+#to connect to another database
+\connect gwp
+
+#to see tables
+\dt   or \d+
+
+#describe table
+\d comments
+\d posts
+
+
+
