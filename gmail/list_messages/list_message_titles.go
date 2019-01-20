@@ -20,6 +20,7 @@ Originally from:  https://github.com/gsuitedevs/go-samples/blob/master/gmail/qui
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -31,6 +32,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
+
+	"github.com/mvdan/xurls"
 )
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -101,6 +104,51 @@ func getMessages(req *gmail.UsersMessagesListCall, nextToken ...string) (*gmail.
 	return r, r.NextPageToken
 }
 
+func getRFC282Headers(headers []*gmail.MessagePartHeader) (from string, subject string, err error) {
+	for _, h := range headers {
+		switch h.Name {
+		case "Subject":
+			subject = h.Value
+		case "From":
+			from = h.Value
+		}
+	}
+	return
+}
+
+func getSubject(headers []*gmail.MessagePartHeader) (subject string) {
+	_, subject, err := getRFC282Headers(headers)
+	if err != nil {
+		log.Fatalf("Unable to parse headers: %v", err)
+	}
+	return
+}
+
+func getMessageContent(payload *gmail.MessagePart) (content string) {
+	if len(payload.Parts) > 0 {
+		for _, part := range payload.Parts {
+			if part.MimeType == "text/html" {
+				data, err := base64.URLEncoding.DecodeString(part.Body.Data)
+				if err != nil {
+					log.Fatalf("Unable to decode message: %v", err)
+				}
+				content = string(data)
+			}
+		}
+	} else {
+		data, err := base64.URLEncoding.DecodeString(payload.Body.Data)
+		if err != nil {
+			log.Fatalf("Unable to decode message: %v", err)
+		}
+		content = string(data)
+	}
+	return
+}
+
+func getAllURLs(message string) []string {
+	return xurls.Strict().FindAllString(message, -1)
+}
+
 func main() {
 	b, err := ioutil.ReadFile("../credentials.json")
 	if err != nil {
@@ -126,26 +174,18 @@ func main() {
 		var r *gmail.ListMessagesResponse
 		r, nextToken = getMessages(req, nextToken)
 		fmt.Println(len(r.Messages), " messages found")
-	}
 
-	/*
 		for _, m := range r.Messages {
-
 			msg, _ := svc.Users.Messages.Get("me", m.Id).Format("full").Do()
-
-			for _, part := range msg.Payload.Parts {
-
-				if part.MimeType == "text/html" {
-
-					data, err := base64.URLEncoding.DecodeString(part.Body.Data)
-					if err != nil {
-						log.Fatalf("Unable to part message: %v", err)
-					}
-					html := string(data)
-					fmt.Println(html)
-
-				}
+			subject := getSubject(msg.Payload.Headers)
+			fmt.Println("\n---", subject)
+			content := getMessageContent(msg.Payload)
+			urls := getAllURLs(content)
+			if len(urls) > 0 {
+				fmt.Println("\t", urls[0])
+			} else {
+				fmt.Println("\tN/A")
 			}
 		}
-	*/
+	}
 }
